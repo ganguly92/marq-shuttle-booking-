@@ -1069,7 +1069,7 @@ function storeBookingDataSecurely(newBookings) {
 // Initialize EmailJS (you'll need to configure this with your email)
 function initializeEmailService() {
     // EmailJS configuration - you'll need to set this up
-    emailjs.init("YOUR_EMAILJS_USER_ID"); // Replace with your EmailJS user ID
+    emailjs.init("G6AZ7WBJysmNW7-YZ"); // Your EmailJS Public Key from Account → API Keys
 }
 
 // Send booking data to admin email
@@ -1077,63 +1077,67 @@ async function sendBookingToAdmin(bookings) {
     try {
         // Email service configuration
         const emailConfig = {
-            serviceID: 'YOUR_SERVICE_ID', // Replace with your service ID
-            templateID: 'YOUR_TEMPLATE_ID', // Replace with your template ID
-            adminEmail: 'admin@example.com' // Replace with your admin email
+            serviceID: 'service_y3xt2pe', // Your Gmail/Outlook Service ID from Email Services
+            templateID: 'template_4fcyf4m', // Your Template ID from the template you created
+            adminEmail: 'ganguly92@gmail.com' // Your actual admin email address
         };
         
-        // Prepare booking data for email
-        const bookingDetails = bookings.map(booking => {
+        // Send individual email for each booking (in case of round trip = 2 emails)
+        for (const booking of bookings) {
             const trip = findTripById(booking.tripId);
-            return `
-🎫 BOOKING ID: ${booking.id}
-👤 Name: ${booking.fullName}
-📞 Phone: ${booking.phoneNumber}
-📧 Email: ${booking.email || 'Not provided'}
-🏠 Flat/Block: ${booking.flatNumber || 'Not provided'}
-📅 Travel Date: ${booking.travelDate}
-🕐 Trip Time: ${trip ? trip.time : 'Unknown'} → ${trip ? trip.arrival : 'Unknown'}
-🔄 Direction: ${booking.direction.toUpperCase()}
-👥 Passengers: ${booking.passengers}
-📝 Special Requests: ${booking.specialRequests || 'None'}
-⏰ Booked At: ${new Date(booking.bookingTime).toLocaleString('en-IN')}
-            `;
-        }).join('\n' + '='.repeat(50) + '\n');
-        
-        // Email parameters
-        const emailParams = {
-            to_email: emailConfig.adminEmail,
-            subject: `🚌 New MARQ Shuttle Booking - ${bookings[0].travelDate}`,
-            message: `
-NEW MARQ SHUTTLE BOOKING RECEIVED
-==================================
-
-${bookingDetails}
-
-📊 SUMMARY:
-• Total Bookings in this submission: ${bookings.length}
-• Total Passengers: ${bookings.reduce((sum, b) => sum + b.passengers, 0)}
-• Booking Type: ${bookings[0].bookingType.toUpperCase()}
-
-🔗 Admin Dashboard: Press Ctrl+Shift+A on the booking website to access admin functions.
-
-This is an automated notification from the MARQ Shuttle Booking System.
-            `,
-            from_name: 'MARQ Shuttle Booking System',
-            reply_to: 'noreply@marqshuttle.com'
-        };
-        
-        // Send email (only if EmailJS is properly configured)
-        if (emailConfig.serviceID !== 'YOUR_SERVICE_ID') {
-            await emailjs.send(emailConfig.serviceID, emailConfig.templateID, emailParams);
-            console.log('[ADMIN] Booking notification sent to admin email');
-        } else {
-            console.log('[ADMIN] Email service not configured - booking saved locally only');
+            
+            // Email parameters matching the template variables exactly
+            const emailParams = {
+                // Basic booking info
+                booking_id: booking.id,
+                passenger_name: booking.fullName,
+                phone_number: booking.phoneNumber,
+                email_address: booking.email || 'Not provided',
+                flat_number: booking.flatNumber || 'Not provided',
+                
+                // Trip details
+                travel_date: booking.travelDate,
+                trip_time: trip ? trip.time : 'Unknown',
+                arrival_time: trip ? trip.arrival : 'Unknown',
+                direction: booking.direction.toUpperCase(),
+                booking_type: booking.bookingType.toUpperCase(),
+                
+                // Passenger details
+                passenger_count: booking.passengers.toString(),
+                special_requests: booking.specialRequests || 'None',
+                booking_timestamp: new Date(booking.bookingTime).toLocaleString('en-IN'),
+                
+                // Summary information
+                total_bookings: bookings.length.toString(),
+                total_passengers: bookings.reduce((sum, b) => sum + b.passengers, 0).toString(),
+                current_date: new Date().toLocaleDateString('en-IN', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                }),
+                
+                // Admin email (for template routing)
+                to_email: emailConfig.adminEmail,
+                from_name: 'MARQ Shuttle Booking System',
+                reply_to: 'noreply@marqshuttle.com'
+            };
+            
+            // Send email (only if EmailJS is properly configured)
+            if (emailConfig.serviceID !== 'YOUR_SERVICE_ID') {
+                await emailjs.send(emailConfig.serviceID, emailConfig.templateID, emailParams);
+                console.log(`[ADMIN] Booking notification sent for ${booking.id}`);
+            } else {
+                console.log('[ADMIN] Email service not configured - booking saved locally only');
+                console.log('[ADMIN] See EmailJS_Template_Setup.md for configuration instructions');
+            }
         }
+        
+        console.log(`[ADMIN] All booking notifications processed (${bookings.length} emails)`);
         
     } catch (error) {
         console.error('Error sending admin notification:', error);
         // Booking still saved locally even if email fails
+        showAlert('Booking saved successfully! (Email notification may have failed)', 'info');
     }
 }
 
