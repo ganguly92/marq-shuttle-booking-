@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARQ Feeder Shuttle - Slot Booking</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- SheetJS library for file export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- EmailJS for sending booking data to admin -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <!-- SheetJS library for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-bus"></i>
+                    <h1>MARQ Feeder Shuttle</h1>
+                </div>
+                <div class="route-info">
+                    <span class="route">Assetz Marq ↔ Kadugodi Metro Station</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Trial Info Banner -->
+        <div class="trial-banner">
+            <div class="banner-content">
+                <i class="fas fa-info-circle"></i>
+                <div class="banner-text">
+                    <strong>Trial Period:</strong> November 10-13, 2025 (Monday-Thursday) | 
+                    <strong>Fare:</strong> ₹35 per trip | 
+                    <strong>Capacity:</strong> 29 seats available
+                </div>
+            </div>
+        </div>
+
+        <!-- Booking Form -->
+        <main class="main-content">
+            <div class="booking-section">
+                <h2><i class="fas fa-calendar-check"></i> Book Your Slot</h2>
+                
+                <form id="bookingForm" class="booking-form">
+                    <!-- Personal Information -->
+                    <div class="form-section">
+                        <h3>Personal Information</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="fullName">Full Name *</label>
+                                <input type="text" id="fullName" name="fullName" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="phoneNumber">Phone Number *</label>
+                                <input type="tel" id="phoneNumber" name="phoneNumber" required pattern="[0-9]{10}">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="email">Email Address</label>
+                                <input type="email" id="email" name="email">
+                            </div>
+                            <div class="form-group">
+                                <label for="flatNumber">Flat Number/Block</label>
+                                <input type="text" id="flatNumber" name="flatNumber" placeholder="e.g., A-101">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trip Selection -->
+                    <div class="form-section">
+                        <h3>Select Your Trip(s)</h3>
+                        <div class="trip-selector">
+                            <div class="date-selector">
+                                <label for="travelDate">Travel Date *</label>
+                                <select id="travelDate" name="travelDate" required>
+                                    <option value="">Select Date</option>
+                                    <option value="2025-11-10">Monday, November 10, 2025</option>
+                                    <option value="2025-11-11">Tuesday, November 11, 2025</option>
+                                    <option value="2025-11-12">Wednesday, November 12, 2025</option>
+                                    <option value="2025-11-13">Thursday, November 13, 2025</option>
+                                </select>
+                            </div>
+
+                            <div class="booking-type-selector">
+                                <label>Booking Type *</label>
+                                <div class="radio-group">
+                                    <label class="radio-option">
+                                        <input type="radio" name="bookingType" value="single" required>
+                                        <span class="radio-custom"></span>
+                                        <div class="radio-content">
+                                            <strong>Single Trip</strong>
+                                            <small>Book either morning OR evening trip</small>
+                                        </div>
+                                    </label>
+                                    <label class="radio-option">
+                                        <input type="radio" name="bookingType" value="roundtrip" required>
+                                        <span class="radio-custom"></span>
+                                        <div class="radio-content">
+                                            <strong>Round Trip</strong>
+                                            <small>Book both morning AND evening trips</small>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="singleTripSelector" class="direction-selector" style="display: none;">
+                                <label>Direction *</label>
+                                <div class="radio-group">
+                                    <label class="radio-option">
+                                        <input type="radio" name="direction" value="morning">
+                                        <span class="radio-custom"></span>
+                                        <div class="radio-content">
+                                            <strong>Morning - Marq → Metro</strong>
+                                            <small>Boarding at Assetz Marq</small>
+                                        </div>
+                                    </label>
+                                    <label class="radio-option">
+                                        <input type="radio" name="direction" value="evening">
+                                        <span class="radio-custom"></span>
+                                        <div class="radio-content">
+                                            <strong>Evening - Metro → Marq</strong>
+                                            <small>Boarding at Kadugodi Metro</small>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Time Slot Selection -->
+                    <div class="form-section">
+                        <h3>Available Time Slots</h3>
+                        <div id="timeSlots" class="time-slots">
+                            <!-- Dynamic content will be loaded here -->
+                        </div>
+                    </div>
+
+                    <!-- Additional Information -->
+                    <div class="form-section">
+                        <h3>Additional Information</h3>
+                        <div class="form-group">
+                            <label for="passengers">Number of Passengers *</label>
+                            <select id="passengers" name="passengers" required>
+                                <option value="1">1 Passenger</option>
+                                <option value="2">2 Passengers</option>
+                                <option value="3">3 Passengers</option>
+                                <option value="4">4 Passengers</option>
+                            </select>
+                            <small class="form-note">Same number of passengers for all selected trips</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="specialRequests">Special Requests/Notes</label>
+                            <textarea id="specialRequests" name="specialRequests" rows="3" placeholder="Any special requirements or notes..."></textarea>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox-option">
+                                <input type="checkbox" id="terms" name="terms" required>
+                                <span class="checkbox-custom"></span>
+                                I understand this is a trial service and payment (₹35 per person per trip) is to be made directly to the driver
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="form-actions">
+                        <button type="submit" id="submitButton" class="btn btn-primary" disabled>
+                            <i class="fas fa-check-circle"></i>
+                            Book My Slot(s)
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Trip Schedule -->
+            <div class="schedule-section">
+                <h2><i class="fas fa-clock"></i> Trip Schedule</h2>
+                
+                <div class="schedule-grid">
+                    <!-- Morning Trips -->
+                    <div class="schedule-card">
+                        <h3><i class="fas fa-sun"></i> Morning Trips</h3>
+                        <p class="route-direction">Assetz Marq → Kadugodi Metro</p>
+                        <div class="trip-list">
+                            <div class="trip-item">
+                                <span class="trip-number">1</span>
+                                <div class="trip-time">
+                                    <strong>7:25 AM</strong> → <strong>7:50 AM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                            <div class="trip-item">
+                                <span class="trip-number">2</span>
+                                <div class="trip-time">
+                                    <strong>8:15 AM</strong> → <strong>8:40 AM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                            <div class="trip-item">
+                                <span class="trip-number">3</span>
+                                <div class="trip-time">
+                                    <strong>8:55 AM</strong> → <strong>9:20 AM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                            <div class="trip-item">
+                                <span class="trip-number">4</span>
+                                <div class="trip-time">
+                                    <strong>9:45 AM</strong> → <strong>10:15 AM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Evening Trips -->
+                    <div class="schedule-card">
+                        <h3><i class="fas fa-moon"></i> Evening Trips</h3>
+                        <p class="route-direction">Kadugodi Metro → Assetz Marq</p>
+                        <div class="trip-list">
+                            <div class="trip-item">
+                                <span class="trip-number">1</span>
+                                <div class="trip-time">
+                                    <strong>5:00 PM</strong> → <strong>5:25 PM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                            <div class="trip-item">
+                                <span class="trip-number">2</span>
+                                <div class="trip-time">
+                                    <strong>6:00 PM</strong> → <strong>6:25 PM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                            <div class="trip-item">
+                                <span class="trip-number">3</span>
+                                <div class="trip-time">
+                                    <strong>7:00 PM</strong> → <strong>7:25 PM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                            <div class="trip-item">
+                                <span class="trip-number">4</span>
+                                <div class="trip-time">
+                                    <strong>8:00 PM</strong> → <strong>8:25 PM</strong>
+                                    <small>Departure → Arrival</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Important Information -->
+            <div class="info-section">
+                <h2><i class="fas fa-exclamation-circle"></i> Important Information</h2>
+                <div class="info-grid">
+                    <div class="info-card">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <h4>Boarding Point</h4>
+                        <p>Near Roundabout (Main Entry) at Assetz Marq</p>
+                    </div>
+                    <div class="info-card">
+                        <i class="fas fa-rupee-sign"></i>
+                        <h4>Payment</h4>
+                        <p>₹35 per person per trip<br><small>Pay directly to the driver</small></p>
+                    </div>
+                    <div class="info-card">
+                        <i class="fas fa-users"></i>
+                        <h4>Capacity</h4>
+                        <p>30 seats total<br><small>29 passengers + 1 driver</small></p>
+                    </div>
+                    <div class="info-card">
+                        <i class="fas fa-clock"></i>
+                        <h4>Service Type</h4>
+                        <p>First come, first serve<br><small>Trial period only</small></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Disclaimer -->
+            <div class="disclaimer-section">
+                <h3><i class="fas fa-info-circle"></i> Notes & Disclaimer</h3>
+                <ul>
+                    <li>This is a resident-driven pilot program with no commercial involvement</li>
+                    <li>Payment is made directly to the bus operator</li>
+                    <li>The organizing team is not responsible for service quality or operational delays</li>
+                    <li>Feedback will be collected to assess demand and improve service design</li>
+                    <li>No standing passengers allowed - seating only</li>
+                    <li>Service availability is first come, first serve during the trial period</li>
+                </ul>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2025 MARQ Feeder Shuttle Trial. For feedback and queries, contact the organizing team.</p>
+        </footer>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fas fa-check-circle"></i>
+                <h3>Booking Confirmed!</h3>
+            </div>
+            <div class="modal-body">
+                <p>Your slot has been successfully booked. Please arrive 5 minutes before departure time at the boarding point.</p>
+                <div id="bookingDetails" class="booking-details">
+                    <!-- Booking details will be inserted here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
