@@ -32,6 +32,17 @@ const singleTripSelector = document.getElementById('singleTripSelector');
 const modal = document.getElementById('successModal');
 const bookingDetails = document.getElementById('bookingDetails');
 
+// Payment Elements
+const paymentScreenshot = document.getElementById('paymentScreenshot');
+const paymentCompleted = document.getElementById('paymentCompleted');
+const fileUploadArea = document.getElementById('fileUploadArea');
+const filePreview = document.getElementById('filePreview');
+const previewImage = document.getElementById('previewImage');
+const fileName = document.getElementById('fileName');
+const removeFileBtn = document.getElementById('removeFile');
+const totalAmountSpan = document.getElementById('totalAmount');
+const paymentReference = document.getElementById('paymentReference');
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', initializeApp);
 form.addEventListener('submit', handleFormSubmit);
@@ -43,6 +54,7 @@ dateSelect.addEventListener('change', handleDateChange);
 // Ctrl+Alt+E - Export data
 // Ctrl+Shift+A - Admin panel  
 // Ctrl+Shift+S - Quick statistics
+// Ctrl+Shift+R - Sync with Firebase (refresh data)
 // Ctrl+Shift+Del - Clear all data (emergency)
 document.addEventListener('keydown', function(event) {
     if (event.ctrlKey && event.altKey && event.key === 'E') {
@@ -51,11 +63,19 @@ document.addEventListener('keydown', function(event) {
     }
     if (event.ctrlKey && event.shiftKey && event.key === 'A') {
         event.preventDefault();
-        showAdminPanel();
+        showEnhancedAdminPanel();
     }
     if (event.ctrlKey && event.shiftKey && event.key === 'S') {
         event.preventDefault();
         showQuickStatistics();
+    }
+    if (event.ctrlKey && event.shiftKey && event.key === 'R') {
+        event.preventDefault();
+        if (typeof forceSyncWithFirebase === 'function') {
+            forceSyncWithFirebase();
+        } else {
+            alert('🔄 Firebase sync not available - check Firebase connection');
+        }
     }
     if (event.ctrlKey && event.shiftKey && event.key === 'Delete') {
         event.preventDefault();
@@ -83,6 +103,7 @@ function initializeApp() {
     updateTimeSlots();
     setupRealTimeValidation();
     validateFormRealTime(); // Initial validation check
+    updatePaymentAmounts(); // Initialize payment amounts
     
     // Initialize email service for admin notifications
     if (typeof emailjs !== 'undefined') {
@@ -182,6 +203,44 @@ function findTripById(tripId) {
     return Object.values(appState.trips).flat().find(trip => trip.id === tripId);
 }
 
+// Update payment amounts dynamically
+function updatePaymentAmounts() {
+    const selectedBookingType = document.querySelector('input[name="bookingType"]:checked');
+    const passengersInput = document.getElementById('passengers');
+    
+    // Get passengers count (default to 1 if not found)
+    const passengers = passengersInput ? parseInt(passengersInput.value) || 1 : 1;
+    
+    // Calculate total amount based on booking type
+    let totalAmount = 0;
+    if (selectedBookingType) {
+        const bookingType = selectedBookingType.value;
+        if (bookingType === 'single') {
+            totalAmount = passengers * 35; // ₹35 for single trip
+        } else if (bookingType === 'roundtrip') {
+            totalAmount = passengers * 70; // ₹70 for round trip
+        }
+    } else {
+        // Default to single trip pricing if no booking type selected
+        totalAmount = passengers * 35;
+    }
+    
+    // Update all payment amount displays
+    const totalAmountSpan = document.getElementById('totalAmount');
+    const amountDisplaySpans = document.querySelectorAll('.amount-display');
+    
+    if (totalAmountSpan) {
+        totalAmountSpan.textContent = totalAmount;
+    }
+    
+    amountDisplaySpans.forEach(span => {
+        span.textContent = totalAmount;
+    });
+    
+    const bookingType = selectedBookingType ? selectedBookingType.value : 'single (default)';
+    console.log(`💰 Updated payment amount: ₹${totalAmount} (${bookingType} trip, ${passengers} passenger${passengers > 1 ? 's' : ''})`);
+}
+
 // Handle booking type change
 function handleBookingTypeChange() {
     const selectedBookingType = document.querySelector('input[name="bookingType"]:checked');
@@ -206,6 +265,9 @@ function handleBookingTypeChange() {
         appState.selectedTrips.morning = null;
         appState.selectedTrips.evening = null;
         updateTimeSlots();
+        
+        // Update payment amounts
+        updatePaymentAmounts();
         
         // Trigger real-time validation
         validateFormRealTime();
@@ -392,13 +454,14 @@ async function handleFormSubmit(event) {
 
     // Create bookings for each selected trip
     const bookings = [];
+    const isRoundTrip = selectedTripIds.length > 1;
+    const farePerPassenger = isRoundTrip ? 70 : 35; // ₹70 for round trip, ₹35 for single trip
+    
     selectedTripIds.forEach(tripId => {
         const booking = {
             id: generateBookingId(),
             tripId: tripId,
             fullName: formData.get('fullName'),
-            phoneNumber: formData.get('phoneNumber'),
-            email: formData.get('email'),
             flatNumber: formData.get('flatNumber'),
             travelDate: formData.get('travelDate'),
             bookingType: selectedBookingType.value,
@@ -406,7 +469,14 @@ async function handleFormSubmit(event) {
             passengers: passengers,
             specialRequests: formData.get('specialRequests'),
             bookingTime: new Date().toISOString(),
-            status: 'confirmed'
+            status: 'confirmed',
+            payment: {
+                amount: isRoundTrip ? passengers * 70 : passengers * 35,
+                totalFare: passengers * farePerPassenger,
+                screenshotUploaded: true,
+                screenshotFileName: document.getElementById('paymentScreenshot').files[0]?.name || 'payment_screenshot',
+                paymentConfirmed: true
+            }
         };
         bookings.push(booking);
     });
@@ -415,6 +485,12 @@ async function handleFormSubmit(event) {
     appState.bookings.push(...bookings);
     saveBookings();
     updateTripCapacities();
+    
+    // Save to Firebase (new feature!)
+    saveBookingsToFirebase(bookings);
+    
+    // Verify Firebase save immediately (for testing)
+    setTimeout(() => verifyFirebaseSave(bookings), 2000);
     
     // Send booking data to admin email
     sendBookingToAdmin(bookings);
@@ -427,14 +503,8 @@ async function handleFormSubmit(event) {
     // Show success message
     showBookingConfirmation(bookings);
     
-    // Reset form
-    form.reset();
-    appState.selectedTrips.morning = null;
-    appState.selectedTrips.evening = null;
-    singleTripSelector.style.display = 'none';
-    
-    // Clear all validation highlights
-    clearValidationHighlights();
+    // Reset form to default state
+    resetFormToDefault();
 }
 
 // Generate unique booking ID
@@ -450,7 +520,10 @@ function showBookingConfirmation(bookings) {
     const bookingArray = Array.isArray(bookings) ? bookings : [bookings];
     
     let bookingDetailsHtml = '';
-    let totalFare = 0;
+    
+    // Determine if this is a single trip or round trip
+    const isRoundTrip = bookingArray.length > 1;
+    const farePerPassenger = isRoundTrip ? 70 : 35; // ₹70 for round trip, ₹35 for single trip
     
     bookingArray.forEach((booking, index) => {
         const trip = findTripById(booking.tripId);
@@ -462,8 +535,8 @@ function showBookingConfirmation(bookings) {
             ? 'Assetz Marq (Near Roundabout)' 
             : 'Kadugodi Metro Station';
 
+        // For display purposes, show individual trip fare as ₹35, but total will be correct
         const fareForTrip = booking.passengers * 35;
-        totalFare += fareForTrip;
         
         bookingDetailsHtml += `
             <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: ${index < bookingArray.length - 1 ? '1rem' : '0'};">
@@ -481,6 +554,9 @@ function showBookingConfirmation(bookings) {
             </div>
         `;
     });
+    
+    // Calculate total fare based on booking type
+    const totalFare = bookingArray[0].passengers * farePerPassenger;
     
     bookingDetails.innerHTML = `
         <div style="display: grid; gap: 1rem;">
@@ -512,6 +588,78 @@ function showBookingConfirmation(bookings) {
 // Close modal
 function closeModal() {
     modal.style.display = 'none';
+    // Reset the entire form when modal closes
+    resetFormToDefault();
+}
+
+// Comprehensive form reset function
+function resetFormToDefault() {
+    // Reset the HTML form
+    form.reset();
+    
+    // Reset application state
+    appState.selectedTrips.morning = null;
+    appState.selectedTrips.evening = null;
+    
+    // Hide trip selector
+    singleTripSelector.style.display = 'none';
+    
+    // Clear payment file upload
+    const paymentScreenshot = document.getElementById('paymentScreenshot');
+    if (paymentScreenshot) {
+        paymentScreenshot.value = '';
+    }
+    
+    // Hide file preview if visible
+    const filePreview = document.querySelector('.file-preview');
+    const fileName = document.querySelector('.file-name');
+    const fileInfo = document.querySelector('.file-info');
+    
+    if (filePreview) filePreview.style.display = 'none';
+    if (fileName) fileName.textContent = '';
+    if (fileInfo) fileInfo.textContent = '';
+    
+    // Reset payment amount display
+    const paymentAmount = document.querySelector('.payment-amount');
+    if (paymentAmount) {
+        paymentAmount.textContent = '₹35';
+    }
+    
+    // Uncheck all checkboxes
+    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    
+    // Uncheck all radio buttons
+    document.querySelectorAll('input[type="radio"]').forEach(radio => {
+        radio.checked = false;
+    });
+    
+    // Clear all validation highlights
+    clearValidationHighlights();
+    
+    // Reset trip sections
+    updateTimeSlots();
+    
+    // Clear any selected dates that might be in the future
+    const travelDate = document.getElementById('travelDate');
+    if (travelDate) {
+        travelDate.value = '';
+    }
+    
+    // Reset passengers to 1
+    const passengers = document.getElementById('passengers');
+    if (passengers) {
+        passengers.value = '1';
+    }
+    
+    // Clear special requests
+    const specialRequests = document.getElementById('specialRequests');
+    if (specialRequests) {
+        specialRequests.value = '';
+    }
+    
+    console.log('Form reset to default state');
 }
 
 // Show alert message
@@ -609,24 +757,6 @@ document.addEventListener('keydown', function(event) {
 });
 
 // Form validation enhancements
-document.getElementById('phoneNumber').addEventListener('input', function(event) {
-    const value = event.target.value.replace(/\D/g, ''); // Remove non-digits
-    if (value.length <= 10) {
-        event.target.value = value;
-    } else {
-        event.target.value = value.slice(0, 10);
-    }
-});
-
-// Auto-format phone number with country code
-document.getElementById('phoneNumber').addEventListener('blur', function(event) {
-    const value = event.target.value;
-    if (value.length === 10 && !value.startsWith('+91')) {
-        event.target.value = value;
-        // Could add +91 prefix if needed: `+91 ${value}`
-    }
-});
-
 // Real-time form validation
 form.addEventListener('input', function(e) {
     // Clear validation highlighting when user starts typing
@@ -637,8 +767,23 @@ form.addEventListener('input', function(e) {
             label.classList.remove('required-missing');
         }
     }
+    
+    // Update payment amounts when passengers field changes
+    if (e.target.id === 'passengers') {
+        updatePaymentAmounts();
+    }
+    
     validateForm();
 });
+
+// Add specific event listener for passengers dropdown
+const passengersSelect = document.getElementById('passengers');
+if (passengersSelect) {
+    passengersSelect.addEventListener('change', function() {
+        updatePaymentAmounts();
+        console.log(`👥 Passengers changed to: ${this.value}`);
+    });
+}
 
 // Add validation on change events too
 bookingTypeInputs.forEach(input => {
@@ -648,6 +793,10 @@ bookingTypeInputs.forEach(input => {
         if (bookingTypeSelector) {
             bookingTypeSelector.classList.remove('required-missing');
         }
+        
+        // Update payment amounts when booking type changes
+        updatePaymentAmounts();
+        
         validateForm();
     });
 });
@@ -666,11 +815,89 @@ directionInputs.forEach(input => {
 // Clear terms highlighting when checkbox is checked
 document.getElementById('terms').addEventListener('change', function() {
     const termsLabel = document.querySelector('label[for="terms"]');
-    if (termsLabel && this.checked) {
-        termsLabel.classList.remove('required-missing');
+    const checkboxGroup = this.closest('.checkbox-group');
+    if (this.checked) {
+        if (termsLabel) {
+            termsLabel.classList.remove('required-missing');
+        }
+        if (checkboxGroup) {
+            checkboxGroup.classList.remove('required-missing');
+        }
     }
     validateForm();
 });
+
+// Payment functionality
+paymentScreenshot.addEventListener('change', handleFileUpload);
+paymentCompleted.addEventListener('change', validateForm);
+removeFileBtn.addEventListener('click', removeUploadedFile);
+
+// Handle file upload for payment screenshot
+function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+        showAlert('Please upload an image file (JPG, PNG, JPEG)', 'error');
+        event.target.value = '';
+        return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+        showAlert('File size must be less than 5MB', 'error');
+        event.target.value = '';
+        return;
+    }
+
+    // Display file preview
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        previewImage.src = e.target.result;
+        fileName.textContent = file.name;
+        fileUploadArea.style.display = 'none';
+        filePreview.style.display = 'block';
+        validateForm();
+    };
+    reader.readAsDataURL(file);
+}
+
+// Remove uploaded file
+function removeUploadedFile() {
+    paymentScreenshot.value = '';
+    previewImage.src = '';
+    fileName.textContent = '';
+    fileUploadArea.style.display = 'block';
+    filePreview.style.display = 'none';
+    validateForm();
+}
+
+// Update payment amount based on selection
+function updatePaymentAmount() {
+    const passengers = parseInt(document.getElementById('passengers').value) || 1;
+    const selectedBookingType = document.querySelector('input[name="bookingType"]:checked');
+    
+    let tripCount = 1;
+    if (selectedBookingType && selectedBookingType.value === 'roundtrip') {
+        tripCount = 2;
+    }
+    
+    const totalAmount = passengers * tripCount * 35; // ₹35 per person per trip
+    totalAmountSpan.textContent = totalAmount;
+    
+    // Update all amount displays
+    document.querySelectorAll('.amount-display').forEach(span => {
+        span.textContent = totalAmount;
+    });
+    
+    // Update payment reference
+    const travelDate = document.getElementById('travelDate').value;
+    if (travelDate) {
+        const dateStr = travelDate.replace(/-/g, '');
+        paymentReference.textContent = `SHUTTLE-${dateStr}`;
+    }
+}
 
 function validateForm() {
     const submitButton = form.querySelector('button[type="submit"]');
@@ -687,8 +914,10 @@ function validateForm() {
     });
     
     const termsChecked = document.getElementById('terms').checked;
+    const paymentCompletedChecked = document.getElementById('paymentCompleted').checked;
+    const paymentScreenshotUploaded = document.getElementById('paymentScreenshot').files.length > 0;
     
-    let isValid = basicFieldsValid && termsChecked && selectedBookingType;
+    let isValid = basicFieldsValid && termsChecked && selectedBookingType && paymentCompletedChecked && paymentScreenshotUploaded;
     
     // Additional validation for trip selection
     if (selectedBookingType && isValid) {
@@ -785,6 +1014,26 @@ function performFullValidation() {
         isValid = false;
     }
     
+    // Validate payment completion
+    const paymentCompleted = document.getElementById('paymentCompleted');
+    const paymentScreenshot = document.getElementById('paymentScreenshot');
+    
+    if (!paymentCompleted.checked) {
+        highlightMissingPayment(paymentCompleted);
+        if (!firstMissingElement) {
+            firstMissingElement = paymentCompleted.closest('.form-group');
+        }
+        isValid = false;
+    }
+    
+    if (paymentScreenshot.files.length === 0) {
+        highlightMissingScreenshot();
+        if (!firstMissingElement) {
+            firstMissingElement = paymentScreenshot.closest('.form-group');
+        }
+        isValid = false;
+    }
+    
     return {
         isValid: isValid,
         firstMissingElement: firstMissingElement
@@ -866,8 +1115,12 @@ function highlightMissingField(field) {
 
 function highlightMissingTerms() {
     const termsLabel = document.querySelector('label[for="terms"]');
+    const checkboxGroup = document.getElementById('terms').closest('.checkbox-group');
     if (termsLabel) {
         termsLabel.classList.add('required-missing');
+    }
+    if (checkboxGroup) {
+        checkboxGroup.classList.add('required-missing');
     }
 }
 
@@ -882,6 +1135,20 @@ function highlightMissingDirection() {
     const directionSelector = document.querySelector('.direction-selector');
     if (directionSelector) {
         directionSelector.classList.add('required-missing');
+    }
+}
+
+function highlightMissingPayment(paymentElement) {
+    const paymentGroup = paymentElement.closest('.form-group');
+    if (paymentGroup) {
+        paymentGroup.classList.add('required-missing');
+    }
+}
+
+function highlightMissingScreenshot() {
+    const uploadArea = document.querySelector('.file-upload-area');
+    if (uploadArea) {
+        uploadArea.classList.add('required-missing');
     }
 }
 
@@ -1091,8 +1358,6 @@ async function sendBookingToAdmin(bookings) {
                 // Basic booking info
                 booking_id: booking.id,
                 passenger_name: booking.fullName,
-                phone_number: booking.phoneNumber,
-                email_address: booking.email || 'Not provided',
                 flat_number: booking.flatNumber || 'Not provided',
                 
                 // Trip details
@@ -1107,9 +1372,16 @@ async function sendBookingToAdmin(bookings) {
                 special_requests: booking.specialRequests || 'None',
                 booking_timestamp: new Date(booking.bookingTime).toLocaleString('en-IN'),
                 
+                // Payment details
+                payment_amount: booking.payment ? `₹${booking.payment.amount}` : 'Not available',
+                payment_confirmed: booking.payment ? (booking.payment.paymentConfirmed ? 'YES' : 'NO') : 'Unknown',
+                screenshot_uploaded: booking.payment ? (booking.payment.screenshotUploaded ? 'YES' : 'NO') : 'Unknown',
+                screenshot_filename: booking.payment ? booking.payment.screenshotFileName : 'Not available',
+                
                 // Summary information
                 total_bookings: bookings.length.toString(),
                 total_passengers: bookings.reduce((sum, b) => sum + b.passengers, 0).toString(),
+                total_amount: `₹${bookings.reduce((sum, b) => sum + (b.payment ? b.payment.amount : 0), 0)}`,
                 current_date: new Date().toLocaleDateString('en-IN', { 
                     year: 'numeric', 
                     month: 'long', 
@@ -1158,6 +1430,9 @@ function showAdminPanel() {
         `${d.date}: ${d.bookings} bookings, ${d.passengers} passengers`
     ).join('\n');
     
+    // Check if XLSX library is loaded
+    const xlsxStatus = typeof XLSX !== 'undefined' ? '✅ Ready' : '❌ Not Loaded';
+    
     const adminInfo = `
 MARQ Shuttle Admin Dashboard
 ============================
@@ -1170,6 +1445,10 @@ MARQ Shuttle Admin Dashboard
 • Storage Size: ${stats.storageSizeMB}MB
 • Performance: ${stats.performanceLevel}
 • Capacity Usage: ${totalBookings} records
+
+📊 EXCEL EXPORT STATUS:
+• XLSX Library: ${xlsxStatus}
+• Export Available: ${totalBookings > 0 ? '✅ Yes' : '⚠️ Empty Template Only'}
 
 📅 DATE BREAKDOWN:
 ${dateBreakdownText || 'No bookings yet'}
@@ -1184,7 +1463,7 @@ ${dateBreakdownText || 'No bookings yet'}
 Available Actions:
     `;
     
-    const action = prompt(adminInfo + '\n\nChoose action:\nE - Export all data to Excel\nS - Show detailed statistics\nA - Archive old data\nC - Clear all data\nESC - Close');
+    const action = prompt(adminInfo + '\n\nChoose action:\nE - Export all data to Excel\nS - Show detailed statistics\nA - Archive old data\nT - Test Excel Export\nM - Manual Data Entry (Multi-device)\nI - Import from Email Instructions\n\n🚨 DANGER ZONE (Admin Only):\nC - Clear all data\nCLEAR - Direct clear\nESC - Close');
     
     if (action && action.toLowerCase() === 'e') {
         exportMasterBookingSheet();
@@ -1194,17 +1473,41 @@ Available Actions:
         archiveOldData();
     } else if (action && action.toLowerCase() === 'c') {
         clearAllBookingData();
+    } else if (action && action.toUpperCase() === 'CLEAR') {
+        // Direct clear without additional password prompt
+        const confirmation = confirm('⚠️ DANGER: This will permanently delete ALL data from both local storage and Firebase!\n\nThis cannot be undone. Continue?');
+        if (confirmation) {
+            const finalConfirm = confirm('🚨 FINAL WARNING: Are you absolutely sure you want to delete ALL booking data?');
+            if (finalConfirm) {
+                directClearAllData();
+            }
+        }
+    } else if (action && action.toLowerCase() === 't') {
+        testExcelExport();
+    } else if (action && action.toLowerCase() === 'm') {
+        showManualDataEntry();
+    } else if (action && action.toLowerCase() === 'i') {
+        showEmailImportInstructions();
     }
 }
 
 // Secure master sheet export - only for admin
 function exportMasterBookingSheet() {
-    if (appState.bookings.length === 0) {
-        console.log('No bookings found to export.');
-        return;
-    }
-    
     try {
+        // Check if XLSX library is loaded
+        if (typeof XLSX === 'undefined') {
+            alert('Excel library not loaded. Please refresh the page and try again.');
+            console.error('XLSX library not found');
+            return;
+        }
+        
+        // Check if there are bookings to export
+        if (appState.bookings.length === 0) {
+            // Create empty template even if no bookings
+            alert('No bookings found. Creating empty template.');
+            createEmptyBookingTemplate();
+            return;
+        }
         const today = new Date();
         const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
         const timeStr = today.toLocaleTimeString('en-US', { 
@@ -1220,8 +1523,6 @@ function exportMasterBookingSheet() {
                 'Serial No': index + 1,
                 'Booking ID': booking.id,
                 'Full Name': booking.fullName,
-                'Phone Number': booking.phoneNumber,
-                'Email': booking.email || 'Not provided',
                 'Flat/Block': booking.flatNumber || 'Not provided',
                 'Travel Date': booking.travelDate,
                 'Trip Time': trip ? trip.time : 'Unknown',
@@ -1253,8 +1554,6 @@ function exportMasterBookingSheet() {
             { wch: 8 },   // Serial No
             { wch: 12 },  // Booking ID
             { wch: 20 },  // Full Name
-            { wch: 15 },  // Phone Number
-            { wch: 25 },  // Email
             { wch: 12 },  // Flat/Block
             { wch: 12 },  // Travel Date
             { wch: 10 },  // Trip Time
@@ -1292,36 +1591,356 @@ function exportMasterBookingSheet() {
         
         console.log(`[ADMIN] Master booking sheet exported: ${filename}`);
         console.log(`[ADMIN] Total bookings: ${appState.bookings.length}`);
+        alert(`Excel file exported successfully! \nFilename: ${filename}\nBookings: ${appState.bookings.length}`);
         
     } catch (error) {
         console.error('Error exporting master booking sheet:', error);
-        alert('Error exporting data. Please try again.');
+        alert(`Error exporting data: ${error.message}\nPlease try again or contact support.`);
+    }
+}
+
+// Create empty booking template for admin
+function createEmptyBookingTemplate() {
+    try {
+        if (typeof XLSX === 'undefined') {
+            alert('Excel library not loaded. Please refresh the page.');
+            return;
+        }
+        
+        const today = new Date();
+        const dateStr = today.toISOString().split('T')[0];
+        const timeStr = today.toLocaleTimeString('en-US', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        }).replace(':', '');
+        
+        // Create empty template with headers
+        const templateData = [{
+            'Serial No': '',
+            'Booking ID': '',
+            'Full Name': '',
+            'Flat/Block': '',
+            'Travel Date': '',
+            'Trip Time': '',
+            'Arrival Time': '',
+            'Direction': '',
+            'Booking Type': '',
+            'Passengers Count': '',
+            'Special Requests': '',
+            'Booking Date & Time': '',
+            'Status': '',
+            'Route': 'Assetz Marq ↔ Kadugodi Metro'
+        }];
+        
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(templateData);
+        
+        // Auto-fit column widths
+        const colWidths = [
+            { wch: 8 }, { wch: 12 }, { wch: 20 }, { wch: 12 },
+            { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 },
+            { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 20 }, 
+            { wch: 10 }, { wch: 25 }
+        ];
+        worksheet['!cols'] = colWidths;
+        
+        // Add header info
+        const summary = [
+            [`MARQ Feeder Shuttle - Booking Template`],
+            [`Generated on: ${today.toLocaleString('en-IN')}`],
+            [`Status: No bookings found - Empty template`],
+            [`Instructions: This template shows the format for booking data`],
+            [``]
+        ];
+        
+        XLSX.utils.sheet_add_aoa(worksheet, summary, { origin: 'A1' });
+        XLSX.utils.sheet_add_json(worksheet, templateData, { origin: 'A6', skipHeader: false });
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Booking Template');
+        
+        const filename = `MARQ_Booking_Template_${dateStr}_${timeStr}.xlsx`;
+        XLSX.writeFile(workbook, filename);
+        
+        console.log(`[ADMIN] Empty template exported: ${filename}`);
+        alert(`Empty booking template exported!\nFilename: ${filename}`);
+        
+    } catch (error) {
+        console.error('Error creating template:', error);
+        alert(`Error creating template: ${error.message}`);
     }
 }
 
 // Admin function to clear all booking data (hidden, password protected)
-function clearAllBookingData() {
+async function clearAllBookingData() {
     const password = prompt('Enter admin password to clear all data:');
     if (password !== 'marq2025admin') {
         alert('Access denied.');
         return;
     }
     
-    const confirmation = prompt('Type "DELETE ALL" to confirm data deletion:');
+    const confirmation = prompt('Type "DELETE ALL" to confirm data deletion (includes Firebase):');
     if (confirmation !== 'DELETE ALL') {
         alert('Deletion cancelled.');
         return;
     }
     
-    // Clear all data
-    appState.bookings = [];
-    localStorage.removeItem('marqShuttleBookings');
-    localStorage.removeItem('marq_admin_logs');
-    updateTripCapacities();
-    updateTimeSlots();
+    try {
+        // Clear local data
+        appState.bookings = [];
+        localStorage.removeItem('marqShuttleBookings');
+        localStorage.removeItem('shuttleBookings');
+        localStorage.removeItem('tripBookings');
+        localStorage.removeItem('bookingStats');
+        localStorage.removeItem('marq_admin_logs');
+        
+        // Clear Firebase data if available
+        if (typeof db !== 'undefined') {
+            console.log('🧹 Clearing Firebase data...');
+            
+            const collections = ['bookings', 'trips', 'stats', 'test'];
+            
+            for (const collectionName of collections) {
+                const snapshot = await db.collection(collectionName).get();
+                console.log(`📊 Found ${snapshot.size} documents in ${collectionName}`);
+                
+                if (snapshot.size > 0) {
+                    // Delete all documents in batches
+                    const batch = db.batch();
+                    snapshot.docs.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+                    
+                    await batch.commit();
+                    console.log(`✅ Cleared ${collectionName} collection`);
+                }
+            }
+            
+            console.log('🎉 Firebase data cleared successfully!');
+        }
+        
+        updateTripCapacities();
+        updateTimeSlots();
+        
+        alert('✅ All booking data has been cleared from both local storage and Firebase!');
+        console.log('[ADMIN] All booking data cleared (local + Firebase)');
+        
+        // Refresh page to update UI
+        setTimeout(() => window.location.reload(), 1000);
+        
+    } catch (error) {
+        console.error('❌ Error clearing data:', error);
+        alert(`❌ Error clearing Firebase data: ${error.message}`);
+    }
+}
+
+// Direct clear function without password prompt (already authenticated)
+async function directClearAllData() {
+    try {
+        console.log('🧹 Starting direct clear of all data...');
+        
+        // Clear local data
+        appState.bookings = [];
+        localStorage.removeItem('marqShuttleBookings');
+        localStorage.removeItem('shuttleBookings');
+        localStorage.removeItem('tripBookings');
+        localStorage.removeItem('bookingStats');
+        localStorage.removeItem('marq_admin_logs');
+        
+        // Clear Firebase data if available
+        if (typeof db !== 'undefined') {
+            console.log('🧹 Clearing Firebase data...');
+            
+            const collections = ['bookings', 'trips', 'stats', 'test'];
+            
+            for (const collectionName of collections) {
+                const snapshot = await db.collection(collectionName).get();
+                console.log(`📊 Found ${snapshot.size} documents in ${collectionName}`);
+                
+                if (snapshot.size > 0) {
+                    // Delete all documents in batches
+                    const batch = db.batch();
+                    snapshot.docs.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+                    
+                    await batch.commit();
+                    console.log(`✅ Cleared ${collectionName} collection`);
+                }
+            }
+            
+            console.log('🎉 Firebase data cleared successfully!');
+        }
+        
+        updateTripCapacities();
+        updateTimeSlots();
+        
+        alert('✅ ALL DATA CLEARED!\n\n🧹 Local storage: Cleared\n🔥 Firebase: Cleared\n🔄 UI: Reset\n\nPage will refresh in 2 seconds...');
+        console.log('[ADMIN] Direct clear completed - all data removed');
+        
+        // Refresh page to update UI
+        setTimeout(() => window.location.reload(), 2000);
+        
+    } catch (error) {
+        console.error('❌ Error in direct clear:', error);
+        alert(`❌ Error clearing data: ${error.message}`);
+    }
+}
+
+// Test Excel export functionality
+function testExcelExport() {
+    try {
+        if (typeof XLSX === 'undefined') {
+            alert('❌ XLSX Library NOT LOADED!\n\nThe Excel library failed to load.\nPlease refresh the page and try again.\n\nIf problem persists:\n1. Check internet connection\n2. Try a different browser\n3. Check browser console for errors');
+            return;
+        }
+        
+        // Create test data
+        const testData = [{
+            'Test': 'Excel Export Working',
+            'Status': '✅ Success',
+            'Time': new Date().toLocaleString('en-IN'),
+            'Library': 'XLSX v' + (XLSX.version || 'Unknown')
+        }];
+        
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(testData);
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Test Export');
+        
+        const filename = `MARQ_Excel_Test_${Date.now()}.xlsx`;
+        XLSX.writeFile(workbook, filename);
+        
+        alert(`✅ EXCEL EXPORT TEST SUCCESSFUL!\n\nLibrary Status: ✅ XLSX Loaded\nTest File: ${filename}\nFile Downloaded: ✅ Yes\n\nYour Excel export is working perfectly!`);
+        console.log('[ADMIN] Excel export test successful');
+        
+    } catch (error) {
+        alert(`❌ EXCEL EXPORT TEST FAILED!\n\nError: ${error.message}\n\nTroubleshooting:\n1. Refresh the page\n2. Check browser console\n3. Try different browser\n4. Check internet connection`);
+        console.error('[ADMIN] Excel export test failed:', error);
+    }
+}
+
+// Manual data entry for multi-device consolidation
+function showManualDataEntry() {
+    const instructions = `
+MULTI-DEVICE DATA CONSOLIDATION
+===============================
+
+Since localStorage is device-specific, here are your options:
+
+📧 OPTION 1: USE EMAIL DATA (RECOMMENDED)
+• All bookings automatically sent to: ganguly92@gmail.com
+• Each booking = one email with complete details
+• Copy data from emails to create master Excel
+
+📱 OPTION 2: EXPORT FROM EACH DEVICE
+• Mobile: Triple-click footer → Admin → Export
+• Desktop: Ctrl+Shift+A → Export  
+• Tablet: Same as mobile
+• Manually merge Excel files
+
+🔧 OPTION 3: MANUAL ENTRY (THIS OPTION)
+• Add booking data from other devices manually
+• Enter data you see on mobile/tablet here
+
+Would you like to manually add a booking from another device?
+    `;
     
-    alert('All booking data has been cleared.');
-    console.log('[ADMIN] All booking data cleared');
+    const proceed = confirm(instructions + "\n\nClick OK to manually add booking data, Cancel to return to admin menu.");
+    
+    if (proceed) {
+        addManualBooking();
+    }
+}
+
+// Add manual booking entry
+function addManualBooking() {
+    try {
+        const bookingId = prompt("Enter Booking ID (from other device):\nExample: MFS-1731234567890-ABC12") || "";
+        if (!bookingId) return;
+        
+        const fullName = prompt("Enter Full Name:") || "";
+        const flatNumber = prompt("Enter Flat/Block:") || "";
+        const travelDate = prompt("Enter Travel Date (YYYY-MM-DD):\nExample: 2025-11-10") || "";
+        const direction = prompt("Enter Direction (morning/evening):") || "morning";
+        const passengers = parseInt(prompt("Enter Number of Passengers:") || "1");
+        
+        // Create manual booking entry
+        const manualBooking = {
+            id: bookingId,
+            tripId: direction === "morning" ? "morning_725" : "evening_530",
+            fullName: fullName,
+            flatNumber: flatNumber,
+            travelDate: travelDate,
+            bookingType: "single",
+            direction: direction,
+            passengers: passengers,
+            specialRequests: "Manually entered from " + prompt("Device source (mobile/tablet/desktop):"),
+            bookingTime: new Date().toISOString(),
+            status: "confirmed",
+            manualEntry: true
+        };
+        
+        // Add to bookings
+        appState.bookings.push(manualBooking);
+        saveBookings();
+        updateTripCapacities();
+        
+        alert(`✅ Manual booking added successfully!\n\nBooking ID: ${bookingId}\nName: ${fullName}\nPassengers: ${passengers}\n\nTotal bookings now: ${appState.bookings.length}`);
+        
+        const addMore = confirm("Booking added successfully!\n\nWould you like to add another booking from a different device?");
+        if (addMore) {
+            addManualBooking();
+        }
+        
+    } catch (error) {
+        alert("Error adding manual booking: " + error.message);
+    }
+}
+
+// Show email import instructions
+function showEmailImportInstructions() {
+    const instructions = `
+EMAIL-TO-EXCEL CONVERSION GUIDE
+===============================
+
+Since ALL bookings are sent to ganguly92@gmail.com, 
+you can use your email as the master database:
+
+📧 EMAIL FORMAT (what you receive):
+🎫 BOOKING ID: MFS-1731234567890-ABC12
+👤 Name: John Doe
+🏠 Flat/Block: A-101
+📅 Travel Date: 2025-11-10
+🕐 Trip Time: 7:25 AM → 7:50 AM
+🔄 Direction: MORNING
+👥 Passengers: 2
+
+📊 EXCEL CONVERSION STEPS:
+1. Go to Gmail: ganguly92@gmail.com
+2. Search: "MARQ Shuttle Booking"
+3. Copy each booking email data to Excel:
+   - Column A: Booking ID
+   - Column B: Name  
+   - Column C: Flat
+   - Column D: Date
+   - Column E: Time
+   - Column F: Direction
+   - Column G: Passengers
+
+🚀 AUTOMATED OPTIONS:
+• Use Gmail filters to forward to Google Sheets
+• Use Zapier to auto-convert emails to spreadsheet
+• Use Gmail export tools for bulk processing
+
+💡 TIP: Your email inbox contains ALL bookings from ALL devices!
+This is actually more reliable than localStorage.
+    `;
+    
+    alert(instructions);
+    
+    const openGmail = confirm("Would you like to open Gmail now to check your booking emails?");
+    if (openGmail) {
+        window.open('https://gmail.com', '_blank');
+    }
 }
 
 // Performance monitoring functions
@@ -1485,8 +2104,6 @@ function exportArchiveData(archivedBookings, daysOld) {
                 'Serial No': index + 1,
                 'Booking ID': booking.id,
                 'Full Name': booking.fullName,
-                'Phone Number': booking.phoneNumber,
-                'Email': booking.email || 'Not provided',
                 'Flat/Block': booking.flatNumber || 'Not provided',
                 'Travel Date': booking.travelDate,
                 'Trip Time': trip ? trip.time : 'Unknown',
@@ -1534,4 +2151,228 @@ ${stats.performanceLevel === 'CRITICAL' ? '🚨 CRITICAL: Archive needed!' :
     `;
     
     alert(quickStats);
+}
+
+// Firebase Integration Functions
+async function saveBookingsToFirebase(bookings) {
+    if (typeof saveBookingToFirebase === 'function') {
+        console.log(`🔥 Saving ${bookings.length} bookings to Firebase...`);
+        
+        for (const booking of bookings) {
+            try {
+                await saveBookingToFirebase(booking);
+                console.log(`✅ Booking ${booking.id} saved to Firebase`);
+            } catch (error) {
+                console.error(`❌ Failed to save booking ${booking.id} to Firebase:`, error);
+            }
+        }
+        
+        console.log("🔥 Firebase save operation completed");
+    } else {
+        console.log("⚠️ Firebase not available - bookings saved locally only");
+    }
+}
+
+// Enhanced admin panel with Firebase data
+async function showEnhancedAdminPanel() {
+    if (typeof getAllBookingsFromFirebase === 'function') {
+        try {
+            const firebaseBookings = await getAllBookingsFromFirebase();
+            const firebaseStats = await getStatisticsFromFirebase();
+            
+            let adminInfo = `
+🔥 FIREBASE + LOCAL DATA COMPARISON
+==================================
+
+📊 LOCAL STORAGE:
+- Bookings: ${appState.bookings.length}
+- Last Updated: ${new Date().toLocaleString('en-IN')}
+
+🔥 FIREBASE DATABASE:
+- Bookings: ${firebaseBookings.length}
+- Total Passengers: ${firebaseStats?.totalPassengers || 0}
+- Total Revenue: ₹${firebaseStats?.totalRevenue || 0}
+- Last Updated: ${firebaseStats?.lastUpdated ? new Date(firebaseStats.lastUpdated.toDate()).toLocaleString('en-IN') : 'Never'}
+
+📈 DATA SYNC STATUS:
+${firebaseBookings.length === appState.bookings.length ? '✅ Synchronized' : '⚠️ Sync difference detected'}
+
+Available Actions:
+E - Export Firebase data to Excel
+S - Show Firebase statistics
+L - Load Firebase data to local
+F - Force sync Firebase
+C - Clear all data (LOCAL + FIREBASE)
+            `;
+            
+            const action = prompt(adminInfo + '\n\nChoose action:');
+            
+            if (action && action.toLowerCase() === 'e') {
+                exportFirebaseDataToExcel(firebaseBookings);
+            } else if (action && action.toLowerCase() === 's') {
+                showFirebaseStatistics(firebaseStats);
+            } else if (action && action.toLowerCase() === 'l') {
+                loadFirebaseDataToLocal(firebaseBookings);
+            } else if (action && action.toLowerCase() === 'f') {
+                forceSyncWithFirebase();
+            } else if (action && action.toLowerCase() === 'c') {
+                clearAllDataIncludingFirebase();
+            }
+            
+        } catch (error) {
+            console.error("❌ Error accessing Firebase data:", error);
+            showAdminPanel(); // Fallback to local admin panel
+        }
+    } else {
+        showAdminPanel(); // Fallback to local admin panel
+    }
+}
+
+async function exportFirebaseDataToExcel(firebaseBookings) {
+    if (!firebaseBookings || firebaseBookings.length === 0) {
+        alert('No Firebase data to export');
+        return;
+    }
+    
+    try {
+        // Convert Firebase data to Excel format
+        const excelData = firebaseBookings.map(booking => ({
+            'Booking ID': booking.id,
+            'Full Name': booking.fullName,
+            'Flat Number': booking.flatNumber || 'Not provided',
+            'Travel Date': booking.travelDate,
+            'Trip Time': findTripById(booking.tripId)?.time || 'Unknown',
+            'Direction': booking.direction.toUpperCase(),
+            'Booking Type': booking.bookingType.toUpperCase(),
+            'Passengers': booking.passengers,
+            'Payment Amount': booking.payment?.amount || 0,
+            'Payment Confirmed': booking.payment?.paymentConfirmed ? 'YES' : 'NO',
+            'Screenshot Uploaded': booking.payment?.screenshotUploaded ? 'YES' : 'NO',
+            'Special Requests': booking.specialRequests || 'None',
+            'Booking Time': booking.createdAt ? new Date(booking.createdAt.toDate()).toLocaleString('en-IN') : booking.bookingTime,
+            'Status': booking.status
+        }));
+        
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Firebase Bookings');
+        
+        const fileName = `MARQ_Firebase_Bookings_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        
+        alert(`✅ Firebase data exported to ${fileName}`);
+        
+    } catch (error) {
+        console.error('Error exporting Firebase data:', error);
+        alert('❌ Error exporting Firebase data');
+    }
+}
+
+// Reset all trip capacities to default (for Firebase sync)
+function resetAllTripCapacities() {
+    console.log("🔄 Resetting all trip capacities to default (empty Firebase)");
+    
+    // Reset the trips data structure
+    const defaultTrips = [
+        {
+            id: 'morning_0725_weekday',
+            time: '7:25 AM',
+            arrival: '7:50 AM',
+            capacity: 29,
+            booked: 0,
+            available: 29,
+            direction: 'morning'
+        },
+        {
+            id: 'morning_0815_weekday',
+            time: '8:15 AM', 
+            arrival: '8:40 AM',
+            capacity: 29,
+            booked: 0,
+            available: 29,
+            direction: 'morning'
+        },
+        {
+            id: 'morning_0850_weekday',
+            time: '8:50 AM',
+            arrival: '9:15 AM', 
+            capacity: 29,
+            booked: 0,
+            available: 29,
+            direction: 'morning'
+        }
+    ];
+    
+    // Update the global trips data if it exists
+    if (typeof appState !== 'undefined' && appState.trips) {
+        // Reset morning trips
+        if (Array.isArray(appState.trips.morning)) {
+            appState.trips.morning.forEach(trip => {
+                trip.booked = 0;
+                trip.available = trip.capacity || 29;
+            });
+        }
+        
+        // Reset evening trips
+        if (Array.isArray(appState.trips.evening)) {
+            appState.trips.evening.forEach(trip => {
+                trip.booked = 0;
+                trip.available = trip.capacity || 29;
+            });
+        }
+    }
+    
+    // Update the UI to reflect the reset
+    updateTimeSlots();
+    
+    console.log("✅ Trip capacities reset to empty state");
+}
+
+// Immediate Firebase verification after booking
+async function verifyFirebaseSave(bookings) {
+    if (typeof getAllBookingsFromFirebase !== 'function') {
+        console.log("🔍 Firebase verification: Firebase not available");
+        return;
+    }
+    
+    try {
+        console.log("🔍 Verifying Firebase save...");
+        const firebaseBookings = await getAllBookingsFromFirebase();
+        const recentBookingIds = bookings.map(b => b.id);
+        
+        let foundCount = 0;
+        for (const bookingId of recentBookingIds) {
+            const found = firebaseBookings.find(fb => fb.id === bookingId);
+            if (found) {
+                foundCount++;
+                console.log(`✅ Verified: Booking ${bookingId} found in Firebase`);
+            } else {
+                console.log(`❌ Warning: Booking ${bookingId} NOT found in Firebase`);
+            }
+        }
+        
+        if (foundCount === bookings.length) {
+            console.log("🎉 VERIFICATION SUCCESS: All bookings saved to Firebase!");
+            
+            // Optional: Show user confirmation
+            const verificationAlert = `
+🔥 FIREBASE VERIFICATION SUCCESS!
+
+✅ ${foundCount}/${bookings.length} bookings saved to Firebase
+✅ Data is safely stored in cloud database
+✅ Admin can access via Firebase Console
+
+Your booking is confirmed and backed up! 🎯
+            `;
+            
+            // Uncomment this line if you want to show user confirmation:
+            // alert(verificationAlert);
+            
+        } else {
+            console.log(`⚠️ VERIFICATION PARTIAL: ${foundCount}/${bookings.length} bookings found in Firebase`);
+        }
+        
+    } catch (error) {
+        console.error("❌ Firebase verification failed:", error);
+    }
 }

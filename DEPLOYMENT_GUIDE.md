@@ -98,8 +98,6 @@ NEW MARQ SHUTTLE BOOKING RECEIVED
 
 🎫 BOOKING ID: MARQ-20251110-001
 👤 Name: John Doe
-📞 Phone: 9876543210
-📧 Email: john@example.com
 🏠 Flat/Block: A-101
 📅 Travel Date: 2025-11-10
 🕐 Trip Time: 7:25 AM → 7:50 AM

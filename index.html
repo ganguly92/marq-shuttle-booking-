@@ -11,6 +11,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- EmailJS for sending booking data to admin -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
     <!-- SheetJS library for Excel export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -54,16 +57,6 @@
                             <div class="form-group">
                                 <label for="fullName">Full Name *</label>
                                 <input type="text" id="fullName" name="fullName" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="phoneNumber">Phone Number *</label>
-                                <input type="tel" id="phoneNumber" name="phoneNumber" required pattern="[0-9]{10}">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="email">Email Address</label>
-                                <input type="email" id="email" name="email">
                             </div>
                             <div class="form-group">
                                 <label for="flatNumber">Flat Number/Block</label>
@@ -162,8 +155,64 @@
                             <label class="checkbox-option">
                                 <input type="checkbox" id="terms" name="terms" required>
                                 <span class="checkbox-custom"></span>
-                                I understand this is a trial service and payment (₹35 per person per trip) is to be made directly to the driver
+                                I understand this is a trial service and acknowledge the payment requirement <span class="required-asterisk">*</span>
                             </label>
+                        </div>
+                    </div>
+
+                    <!-- Payment Section -->
+                    <div class="form-section">
+                        <h3><i class="fas fa-credit-card"></i> Payment Confirmation</h3>
+                        <div class="payment-container">
+                            <!-- Payment QR Code -->
+                            <div class="payment-qr-section">
+                                <h4>Scan QR Code to Pay</h4>
+                                <div class="qr-code-container">
+                                    <img id="paymentQrCode" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23f0f0f0'/%3E%3Ctext x='100' y='100' text-anchor='middle' dominant-baseline='middle' fill='%23666' font-family='Arial' font-size='14'%3EPayment QR Code%3C/text%3E%3C/svg%3E" alt="Payment QR Code">
+                                    <div class="qr-info">
+                                        <p><strong>Amount:</strong> ₹<span id="totalAmount">35</span></p>
+                                        <p><strong>Reference:</strong> MARQ-<span id="paymentReference">SHUTTLE</span></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Payment Confirmation -->
+                            <div class="payment-confirmation">
+                                <div class="form-group checkbox-group">
+                                    <label class="checkbox-option">
+                                        <input type="checkbox" id="paymentCompleted" name="paymentCompleted" required>
+                                        <span class="checkbox-custom"></span>
+                                        I have completed the payment of ₹<span class="amount-display">35</span>
+                                    </label>
+                                </div>
+
+                                <!-- Screenshot Upload -->
+                                <div class="form-group">
+                                    <label for="paymentScreenshot">Upload Payment Screenshot *</label>
+                                    <div class="file-upload-container">
+                                        <input type="file" id="paymentScreenshot" name="paymentScreenshot" accept="image/*" required>
+                                        <div class="file-upload-area" id="fileUploadArea">
+                                            <i class="fas fa-cloud-upload-alt"></i>
+                                            <p>Click to upload payment screenshot</p>
+                                            <small>Supported: JPG, PNG, JPEG (Max 5MB)</small>
+                                        </div>
+                                        <div id="filePreview" class="file-preview" style="display: none;">
+                                            <img id="previewImage" src="" alt="Payment Screenshot Preview">
+                                            <div class="file-info">
+                                                <span id="fileName"></span>
+                                                <button type="button" id="removeFile" class="btn-remove">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="payment-note">
+                                    <i class="fas fa-info-circle"></i>
+                                    <p>Please upload a clear screenshot of your payment confirmation. This is required to complete your booking.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -297,6 +346,35 @@
             </div>
         </main>
 
+    <!-- Hidden Admin Access Button (Mobile-friendly) -->
+    <div id="adminAccess" style="position: fixed; bottom: 10px; right: 10px; opacity: 0; pointer-events: none;">
+        <button onclick="showAdminPanel()" style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 4px; font-size: 12px;">Admin</button>
+    </div>
+    
+    <!-- Admin activation: Triple-click footer -->
+    <script>
+        let footerClicks = 0;
+        document.addEventListener('DOMContentLoaded', function() {
+            const footer = document.querySelector('footer');
+            if (footer) {
+                footer.addEventListener('click', function() {
+                    footerClicks++;
+                    if (footerClicks === 3) {
+                        const adminBtn = document.getElementById('adminAccess');
+                        adminBtn.style.opacity = '1';
+                        adminBtn.style.pointerEvents = 'auto';
+                        setTimeout(() => {
+                            adminBtn.style.opacity = '0';
+                            adminBtn.style.pointerEvents = 'none';
+                            footerClicks = 0;
+                        }, 3000);
+                    }
+                    setTimeout(() => { footerClicks = 0; }, 2000);
+                });
+            }
+        });
+    </script>
+
         <!-- Footer -->
         <footer class="footer">
             <p>&copy; 2025 MARQ Feeder Shuttle Trial. For feedback and queries, contact the organizing team.</p>
@@ -322,6 +400,7 @@
         </div>
     </div>
 
+    <script src="firebase.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

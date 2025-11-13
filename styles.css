@@ -168,6 +168,13 @@ body {
     transition: color 0.2s ease;
 }
 
+/* Required field asterisk styling */
+.required-asterisk {
+    color: #dc2626;
+    font-weight: bold;
+    margin-left: 2px;
+}
+
 .form-group label.required-missing {
     color: #dc2626;
     font-weight: 600;
@@ -390,6 +397,28 @@ body {
     content: " (Required)";
     font-size: 0.8rem;
     font-weight: 400;
+}
+
+/* Checkbox group validation styling */
+.checkbox-group.required-missing {
+    border: 2px solid #dc2626;
+    border-radius: 8px;
+    padding: 10px;
+    background-color: #fef2f2;
+}
+
+.checkbox-group.required-missing .checkbox-option {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.checkbox-group.required-missing::after {
+    content: "This field is required";
+    display: block;
+    color: #dc2626;
+    font-size: 0.8rem;
+    margin-top: 5px;
+    font-style: italic;
 }
 
 /* Time Slots */
@@ -911,5 +940,205 @@ body {
         break-inside: avoid;
         box-shadow: none;
         border: 1px solid #ccc;
+    }
+}
+
+/* Payment Section Styles */
+.payment-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-top: 1rem;
+}
+
+.payment-qr-section {
+    text-align: center;
+    background: #f8f9fa;
+    padding: 2rem;
+    border-radius: 12px;
+    border: 2px dashed #dee2e6;
+}
+
+.payment-qr-section h4 {
+    margin-bottom: 1rem;
+    color: #1e3c72;
+    font-weight: 600;
+}
+
+.qr-code-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.qr-code-container img {
+    width: 200px;
+    height: 200px;
+    border: 3px solid #1e3c72;
+    border-radius: 8px;
+    background: white;
+    padding: 10px;
+}
+
+.qr-info {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    width: 100%;
+    max-width: 220px;
+}
+
+.qr-info p {
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+}
+
+.payment-confirmation {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.amount-display {
+    font-weight: bold;
+    color: #28a745;
+}
+
+.file-upload-container {
+    position: relative;
+}
+
+.file-upload-container input[type="file"] {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    z-index: 2;
+}
+
+.file-upload-area {
+    border: 2px dashed #dee2e6;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    background: #f8f9fa;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.file-upload-area:hover {
+    border-color: #1e3c72;
+    background: #e3f2fd;
+}
+
+.file-upload-area i {
+    font-size: 3rem;
+    color: #6c757d;
+    margin-bottom: 1rem;
+    display: block;
+}
+
+.file-upload-area p {
+    margin: 0.5rem 0;
+    font-weight: 500;
+    color: #495057;
+}
+
+.file-upload-area small {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+.file-preview {
+    border: 2px solid #28a745;
+    border-radius: 8px;
+    padding: 1rem;
+    background: #f8f9fa;
+}
+
+.file-preview img {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.file-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    padding: 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #e9ecef;
+}
+
+.btn-remove {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.btn-remove:hover {
+    background: #c82333;
+}
+
+.payment-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: #fff3cd;
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 4px solid #ffc107;
+}
+
+.payment-note i {
+    color: #856404;
+    margin-top: 0.25rem;
+}
+
+.payment-note p {
+    margin: 0;
+    color: #856404;
+    font-size: 0.9rem;
+}
+
+/* Responsive Payment Section */
+@media (max-width: 768px) {
+    .payment-container {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    
+    .qr-code-container img {
+        width: 160px;
+        height: 160px;
+    }
+    
+    .payment-qr-section {
+        padding: 1.5rem;
+    }
+    
+    .file-upload-area {
+        padding: 1.5rem;
+    }
+    
+    .file-upload-area i {
+        font-size: 2rem;
     }
 }
